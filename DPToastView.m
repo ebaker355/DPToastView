@@ -74,7 +74,7 @@ static id _DP_PreviousToastView = nil;
         [self setShadowRadius:5.0];
         [self setShadowOffset:CGSizeZero];
         [self setInnerEdgeInsets:UIEdgeInsetsMake(6, 10, 6, 10)];
-        [self setYOffset:60];
+        [self setYOffset:(theGravity == DPToastGravityCenter ? 0 : 60)];
         [self setFadeInDuration:0.15];
         [self setFadeOutDuration:0.5];
 
