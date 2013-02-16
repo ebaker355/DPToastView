@@ -164,10 +164,6 @@ static id _DP_PreviousToastView = nil;
     [self defineConstraintsForToastInView:[self.toastView superview]];
 }
 
-- (void)statusBarFrameChanged:(NSNotification *)notification {
-    NSLog(@"frame changed");
-}
-
 - (UIView *)buildToastViewForView:(UIView *)parentView {
     UILabel *label = nil;
     if ([self message]) {
@@ -236,7 +232,6 @@ static id _DP_PreviousToastView = nil;
 
         if ([parentView isKindOfClass:[UIWindow class]]) {
             [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(statusBarOrientationChanged:) name:UIApplicationDidChangeStatusBarOrientationNotification object:nil];
-            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(statusBarFrameChanged:) name:UIApplicationDidChangeStatusBarFrameNotification object:nil];
         }
     } else {
         [parentView removeConstraints:windowConstraints];
