@@ -13,6 +13,7 @@ static id _DP_PreviousToastView = nil;
 
 @interface DPToastView ()
 @property (strong, nonatomic) UIView *toastView;
+@property (strong, nonatomic) NSMutableArray *windowConstraints;
 @property (assign, nonatomic) BOOL cancelNotifications;
 @end
 
@@ -30,6 +31,7 @@ static id _DP_PreviousToastView = nil;
 @synthesize yOffset;
 
 @synthesize toastView;
+@synthesize windowConstraints;
 @synthesize cancelNotifications;
 
 + (id)makeToast:(id)message {
@@ -51,6 +53,8 @@ static id _DP_PreviousToastView = nil;
 + (void)dismissToast {
     if (_DP_PreviousToastView) {
         [[_DP_PreviousToastView toastView] removeFromSuperview];
+        [_DP_PreviousToastView setCancelNotifications:YES];
+        [[NSNotificationCenter defaultCenter] removeObserver:_DP_PreviousToastView];
         [[NSNotificationCenter defaultCenter] postNotificationName:DPToastViewDidDismissNotification object:_DP_PreviousToastView userInfo:@{ DPToastViewUserInfoKey : _DP_PreviousToastView, DPToastViewStringUserInfoKey : [_DP_PreviousToastView messageString] }];
         _DP_PreviousToastView = nil;
     }
@@ -84,14 +88,9 @@ static id _DP_PreviousToastView = nil;
     return self;
 }
 
-- (void)dealloc
-{
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 - (void)show {
-    UIView *view = [[[[UIApplication sharedApplication] keyWindow] rootViewController] view];
-    [self showInView:view];
+    UIWindow *window = [[[UIApplication sharedApplication] windows] objectAtIndex:0];
+    [self showInView:window];
 }
 
 - (void)showInView:(UIView *)view {
@@ -132,11 +131,10 @@ static id _DP_PreviousToastView = nil;
                                               completion:^(BOOL finished) {
 
                                                   if (finished) {
-                                                      [toastView removeFromSuperview];
-                                                      _DP_PreviousToastView = nil;
                                                       if (NO == [self cancelNotifications]) {
                                                           [[NSNotificationCenter defaultCenter] postNotificationName:DPToastViewDidDisappearNotification object:self userInfo:@{ DPToastViewUserInfoKey : self, DPToastViewStringUserInfoKey : [self messageString] }];
                                                       }
+                                                      [DPToastView dismissToast];
                                                   }
                                               }];
                          }
@@ -162,7 +160,13 @@ static id _DP_PreviousToastView = nil;
     }
 }
 
-#pragma mark - Internal methods
+- (void)statusBarOrientationChanged:(NSNotification *)notification {
+    [self defineConstraintsForToastInView:[self.toastView superview]];
+}
+
+- (void)statusBarFrameChanged:(NSNotification *)notification {
+    NSLog(@"frame changed");
+}
 
 - (UIView *)buildToastViewForView:(UIView *)parentView {
     UILabel *label = nil;
@@ -222,49 +226,248 @@ static id _DP_PreviousToastView = nil;
                                                                       metrics:nil
                                                                         views:NSDictionaryOfVariableBindings(label)]];
 
-    [parentView addConstraint:[NSLayoutConstraint constraintWithItem:toastView
-                                                           attribute:NSLayoutAttributeCenterX
-                                                           relatedBy:NSLayoutRelationEqual
-                                                              toItem:parentView
-                                                           attribute:NSLayoutAttributeCenterX
-                                                          multiplier:1.0
-                                                            constant:0.0]];
-    switch ([self gravity]) {
-        case DPToastGravityTop: {
-            [parentView addConstraint:[NSLayoutConstraint constraintWithItem:toastView
-                                                                   attribute:NSLayoutAttributeTop
-                                                                   relatedBy:NSLayoutRelationEqual
-                                                                      toItem:parentView
-                                                                   attribute:NSLayoutAttributeTop
-                                                                  multiplier:1.0
-                                                                    constant:ABS(self.yOffset)]];
+    [self defineConstraintsForToastInView:parentView];
+    return toastView;
+}
+
+- (void)defineConstraintsForToastInView:(UIView *)parentView {
+    if (nil == windowConstraints) {
+        windowConstraints = [[NSMutableArray alloc] init];
+
+        if ([parentView isKindOfClass:[UIWindow class]]) {
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(statusBarOrientationChanged:) name:UIApplicationDidChangeStatusBarOrientationNotification object:nil];
+            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(statusBarFrameChanged:) name:UIApplicationDidChangeStatusBarFrameNotification object:nil];
+        }
+    } else {
+        [parentView removeConstraints:windowConstraints];
+        [parentView setNeedsUpdateConstraints];
+        [windowConstraints removeAllObjects];
+    }
+
+    UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
+    if (NO == [parentView isKindOfClass:[UIWindow class]]) {
+        orientation = UIInterfaceOrientationPortrait;
+    }
+
+    switch (orientation) {
+        case UIInterfaceOrientationPortrait: {
+            [toastView setTransform:CGAffineTransformMakeRotation(0)];
+
+            [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                      attribute:NSLayoutAttributeCenterX
+                                                                      relatedBy:NSLayoutRelationEqual
+                                                                         toItem:parentView
+                                                                      attribute:NSLayoutAttributeCenterX
+                                                                     multiplier:1.0
+                                                                       constant:0.0]];
+
+            switch ([self gravity]) {
+                case DPToastGravityTop: {
+                    CGFloat statusBarHeight = 0;
+                    if ([parentView isKindOfClass:[UIWindow class]]) {
+                        if (NO == [UIApplication sharedApplication].statusBarHidden) {
+                            statusBarHeight = [[UIApplication sharedApplication] statusBarFrame].size.height;
+                        }
+                    }
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeTop
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeTop
+                                                                             multiplier:1.0
+                                                                               constant:ABS(self.yOffset) + statusBarHeight]];
+                }
+                    break;
+
+                case DPToastGravityCenter: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeCenterY
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeCenterY
+                                                                             multiplier:1.0
+                                                                               constant:self.yOffset]];
+                }
+                    break;
+
+                case DPToastGravityBottom: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeBottom
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeBottom
+                                                                             multiplier:1.0
+                                                                               constant:(ABS(self.yOffset) * -1)]];
+                }
+                    break;
+            }
         }
             break;
 
-        case DPToastGravityCenter: {
-            [parentView addConstraint:[NSLayoutConstraint constraintWithItem:toastView
-                                                                   attribute:NSLayoutAttributeCenterY
-                                                                   relatedBy:NSLayoutRelationEqual
-                                                                      toItem:parentView
-                                                                   attribute:NSLayoutAttributeCenterY
-                                                                  multiplier:1.0
-                                                                    constant:self.yOffset]];
+        case UIInterfaceOrientationLandscapeLeft: {
+            [toastView setTransform:CGAffineTransformMakeRotation(-M_PI_2)];
+
+            [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                      attribute:NSLayoutAttributeCenterY
+                                                                      relatedBy:NSLayoutRelationEqual
+                                                                         toItem:parentView
+                                                                      attribute:NSLayoutAttributeCenterY
+                                                                     multiplier:1.0
+                                                                       constant:0.0]];
+
+            switch ([self gravity]) {
+                case DPToastGravityTop: {
+                    CGFloat statusBarHeight = 0;
+                    if ([parentView isKindOfClass:[UIWindow class]]) {
+                        if (NO == [UIApplication sharedApplication].statusBarHidden) {
+                            statusBarHeight = [[UIApplication sharedApplication] statusBarFrame].size.width;
+                        }
+                    }
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeLeft
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeLeft
+                                                                             multiplier:1.0
+                                                                               constant:ABS(self.yOffset) + statusBarHeight]];
+                }
+                    break;
+
+                case DPToastGravityCenter: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeCenterX
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeCenterX
+                                                                             multiplier:1.0
+                                                                               constant:self.yOffset]];
+                }
+                    break;
+
+                case DPToastGravityBottom: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeRight
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeRight
+                                                                             multiplier:1.0
+                                                                               constant:(ABS(self.yOffset) * -1)]];
+                }
+                    break;
+            }
         }
             break;
 
-        case DPToastGravityBottom: {
-            [parentView addConstraint:[NSLayoutConstraint constraintWithItem:toastView
-                                                                   attribute:NSLayoutAttributeBottom
-                                                                   relatedBy:NSLayoutRelationEqual
-                                                                      toItem:parentView
-                                                                   attribute:NSLayoutAttributeBottom
-                                                                  multiplier:1.0
-                                                                    constant:(ABS(self.yOffset) * -1)]];
+        case UIInterfaceOrientationLandscapeRight: {
+            [toastView setTransform:CGAffineTransformMakeRotation(M_PI_2)];
+
+            [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                      attribute:NSLayoutAttributeCenterY
+                                                                      relatedBy:NSLayoutRelationEqual
+                                                                         toItem:parentView
+                                                                      attribute:NSLayoutAttributeCenterY
+                                                                     multiplier:1.0
+                                                                       constant:0.0]];
+
+            switch ([self gravity]) {
+                case DPToastGravityTop: {
+                    CGFloat statusBarHeight = 0;
+                    if ([parentView isKindOfClass:[UIWindow class]]) {
+                        if (NO == [UIApplication sharedApplication].statusBarHidden) {
+                            statusBarHeight = [[UIApplication sharedApplication] statusBarFrame].size.width;
+                        }
+                    }
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeRight
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeRight
+                                                                             multiplier:1.0
+                                                                               constant:-(ABS(self.yOffset) + statusBarHeight)]];
+                }
+                    break;
+
+                case DPToastGravityCenter: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeCenterX
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeCenterX
+                                                                             multiplier:1.0
+                                                                               constant:-self.yOffset]];
+                }
+                    break;
+
+                case DPToastGravityBottom: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeLeft
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeLeft
+                                                                             multiplier:1.0
+                                                                               constant:ABS(self.yOffset)]];
+                }
+                    break;
+            }
+        }
+            break;
+
+        case UIInterfaceOrientationPortraitUpsideDown: {
+            [toastView setTransform:CGAffineTransformMakeRotation(M_PI)];
+
+            [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                      attribute:NSLayoutAttributeCenterX
+                                                                      relatedBy:NSLayoutRelationEqual
+                                                                         toItem:parentView
+                                                                      attribute:NSLayoutAttributeCenterX
+                                                                     multiplier:1.0
+                                                                       constant:0.0]];
+
+            switch ([self gravity]) {
+                case DPToastGravityTop: {
+                    CGFloat statusBarHeight = 0;
+                    if ([parentView isKindOfClass:[UIWindow class]]) {
+                        if (NO == [UIApplication sharedApplication].statusBarHidden) {
+                            statusBarHeight = [[UIApplication sharedApplication] statusBarFrame].size.height;
+                        }
+                    }
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeBottom
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeBottom
+                                                                             multiplier:1.0
+                                                                               constant:-(ABS(self.yOffset) + statusBarHeight)]];
+                }
+                    break;
+
+                case DPToastGravityCenter: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeCenterY
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeCenterY
+                                                                             multiplier:1.0
+                                                                               constant:-(self.yOffset)]];
+                }
+                    break;
+
+                case DPToastGravityBottom: {
+                    [windowConstraints addObject:[NSLayoutConstraint constraintWithItem:toastView
+                                                                              attribute:NSLayoutAttributeTop
+                                                                              relatedBy:NSLayoutRelationEqual
+                                                                                 toItem:parentView
+                                                                              attribute:NSLayoutAttributeTop
+                                                                             multiplier:1.0
+                                                                               constant:ABS(self.yOffset)]];
+                }
+                    break;
+            }
         }
             break;
     }
-    
-    return toastView;
+
+    [parentView addConstraints:windowConstraints];
 }
 
 @end
