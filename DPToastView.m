@@ -245,6 +245,7 @@ static id _DP_PreviousToastView = nil;
     }
 
     switch (orientation) {
+        case UIInterfaceOrientationUnknown:
         case UIInterfaceOrientationPortrait: {
             [toastView setTransform:CGAffineTransformMakeRotation(0)];
 
