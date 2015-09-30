@@ -242,6 +242,9 @@ static id _DP_PreviousToastView = nil;
     UIInterfaceOrientation orientation = [[UIApplication sharedApplication] statusBarOrientation];
     if (NO == [parentView isKindOfClass:[UIWindow class]]) {
         orientation = UIInterfaceOrientationPortrait;
+    } else if ([[[UIDevice currentDevice] systemVersion] compare:@"8.0" options:NSNumericSearch] != NSOrderedAscending) {
+        // UIWindow itself is rotated from iOS 8.0
+        orientation = UIInterfaceOrientationPortrait;
     }
 
     switch (orientation) {
