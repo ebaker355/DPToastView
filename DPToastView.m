@@ -112,7 +112,7 @@ static id _DP_PreviousToastView = nil;
                           delay:0
                         options:UIViewAnimationOptionCurveEaseOut
                      animations:^{
-                         [toastView setAlpha:1.0];
+                         [self->toastView setAlpha:1.0];
                      }
                      completion:^(BOOL finished) {
                          if (NO == [self cancelNotifications]) {
@@ -126,7 +126,7 @@ static id _DP_PreviousToastView = nil;
                                                    delay:[self duration]
                                                  options:UIViewAnimationOptionCurveEaseIn
                                               animations:^{
-                                                  [toastView setAlpha:0.0];
+                                                  [self->toastView setAlpha:0.0];
                                               }
                                               completion:^(BOOL finished) {
 
